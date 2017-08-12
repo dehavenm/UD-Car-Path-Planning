@@ -227,7 +227,20 @@ int main() {
   lane_positions.push_back (6.0);
   lane_positions.push_back (10.0);
 
+  //sex maximum speed, acceleration, and jerk
+
   const double speed_limit = 22.2;
+
+  const double a_max = 9.5;
+
+  const double j_max = 45.0;
+
+  //keep track of car's acceleration
+  double car_a = 0.0;
+
+  double set_speed = 0.0;
+
+  //double set_a = 0.0;
 
   ifstream in_map_(map_file_.c_str(), ifstream::in);
 
@@ -251,7 +264,7 @@ int main() {
   	map_waypoints_dy.push_back(d_y);
   }
 
-  h.onMessage([&map_waypoints_x,&map_waypoints_y,&map_waypoints_s,&map_waypoints_dx,&map_waypoints_dy, &speed_limit, &lane_positions, &target_lane, &max_s](uWS::WebSocket<uWS::SERVER> ws, char *data, size_t length,
+  h.onMessage([&map_waypoints_x,&map_waypoints_y,&map_waypoints_s,&map_waypoints_dx,&map_waypoints_dy, &speed_limit, &a_max, &j_max, &car_a, &set_speed, &lane_positions, &target_lane, &max_s](uWS::WebSocket<uWS::SERVER> ws, char *data, size_t length,
                      uWS::OpCode opCode) {
     // "42" at the start of the message means there's a websocket message event.
     // The 4 signifies a websocket message
@@ -298,59 +311,63 @@ int main() {
           	//*********************************************************************************
 
 
-          	double set_speed = speed_limit;
 
-          	/*
 
-          	int num_cars = sensor_fusion.size();
-          	double car_ahead_distance = 1000000.0;
-          	double car_ahead_speed = 1000000.0;
+          	bool too_close = false;
+          	int prev_points = previous_path_x.size();
 
-          	for(int i = 0; i < num_cars; i++)
+
+            //iterate through detected vehicles, determine if there is a car ahead going below speed limit
+
+            for(int i=0; i<sensor_fusion.size(); i++)
             {
+                //determine if car is directly ahead
                 double sensor_d = sensor_fusion[i][6];
-                if (abs(sensor_d - car_d) < 2.7){
-                        double sensor_s = sensor_fusion[i][5];
-                    double distance = sensor_s - car_s;
-                    if (distance < 0.0)
-                        distance += max_s;
-                    if (distance > max_s)
-                        distance -= max_s;
+                if (abs(sensor_d - car_d) < 2.7)
+                {
+                    double vx = sensor_fusion[i][3];
+                    double vy = sensor_fusion[i][4];
+                    double check_speed = sqrt(vx*vx + vy*vy);
+                    double check_car_s = sensor_fusion[i][5];
 
-                    if (distance < car_ahead_distance){
-                        car_ahead_distance = distance;
-                        double vx = sensor_fusion[i][3];
-                        double vy = sensor_fusion[i][4];
-                        car_ahead_speed = sqrt( pow(vx, 2) + pow(vy, 2) );
-                    }
+                    check_car_s += (double)prev_points*.02*check_speed;
+                    std::cout << check_car_s-car_s << "\n";
 
-
+                    if( (check_car_s > car_s) && ((check_car_s-car_s)<30) )
+                        too_close = true;
                 }
             }
 
-            if (car_ahead_distance < 25.0)
-                set_speed = min(speed_limit, car_ahead_speed);
-
-            */
 
 
+            if(too_close)
+            {
+                set_speed -= 0.223;
+            }
+            else if (set_speed < speed_limit)
+            {
+                set_speed += 0.223;
+            }
 
 
 
 
-            int prev_points = previous_path_x.size();
 
 
 
-            vector<double> ptsx;
-            vector<double> ptsy;
 
-            double ref_x = car_x;
-            double ref_y = car_y;
-          	
-	    double ref_yaw = deg2rad(car_yaw);
 
-            if(prev_points < 2)
+
+
+
+          	vector<double> ptsx;
+          	vector<double> ptsy;
+
+          	double ref_x = car_x;
+          	double ref_y = car_y;
+          	double ref_yaw = deg2rad(car_yaw);
+
+          	if(prev_points < 2)
             {
                 //create two points defining a path tangent to the car
                 double prev_car_x = car_x - cos(car_yaw);
@@ -428,6 +445,8 @@ int main() {
 
 
 
+
+
             double x_add_on = 0;
 
             for(int i = 0; i <= 50-prev_points; i++)
@@ -435,6 +454,10 @@ int main() {
                 double N = target_dist/(.02*set_speed);
                 double x_point = x_add_on+target_x/N;
                 double y_point = sp(x_point);
+
+
+
+
 
                 x_add_on = x_point;
 
@@ -448,6 +471,8 @@ int main() {
                 x_point += ref_x;
                 y_point += ref_y;
 
+
+
                 next_x_vals.push_back(x_point);
                 next_y_vals.push_back(y_point);
             }
@@ -456,9 +481,9 @@ int main() {
 
 
 
-            double radius = curve_radius(car_x, car_y, map_waypoints_x, map_waypoints_y);
+            //double radius = curve_radius(car_x, car_y, map_waypoints_x, map_waypoints_y);
 
-            std::cout << radius << "\n";
+            //std::cout << radius << "\n";
 
 
           	//*********************************************************************************
