@@ -227,7 +227,7 @@ int main() {
   lane_positions.push_back (6.0);
   lane_positions.push_back (10.0);
 
-  const double speed_limit = 22.3;
+  const double speed_limit = 22.2;
 
   ifstream in_map_(map_file_.c_str(), ifstream::in);
 
@@ -401,7 +401,7 @@ int main() {
             for (int i=0; i<ptsx.size(); i++)
             {
                 double shift_x = ptsx[i]-ref_x;
-                double shift_y = ptsx[i]-ref_y;
+                double shift_y = ptsy[i]-ref_y;
 
                 ptsx[i] = (shift_x*cos(0-ref_yaw)-shift_y*sin(0-ref_yaw));
                 ptsy[i] = (shift_x*sin(0-ref_yaw)+shift_y*cos(0-ref_yaw));
@@ -443,7 +443,7 @@ int main() {
 
                 //convert points back to global coordinates
                 x_point = (x_ref*cos(ref_yaw)-y_ref*sin(ref_yaw));
-                y_point = (x_ref*sin(ref_yaw)+y_ref*sin(ref_yaw));
+                y_point = (x_ref*sin(ref_yaw)+y_ref*cos(ref_yaw));
 
                 x_point += ref_x;
                 y_point += ref_y;
