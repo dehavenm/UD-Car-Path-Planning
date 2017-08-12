@@ -202,6 +202,87 @@ double curve_radius(double car_x, double car_y, vector<double> maps_x, vector<do
 }
 
 
+//function to determine best lane to be in
+int choose_lane(double car_s, double car_d, double max_speed, vector<vector<double>> sensor_fusion, vector<double> lane_positions, int current_lane, int prev_points, double max_s)
+{
+    //
+    vector<bool> safe;
+    vector<double> traffic_speed;
+    vector<double> clearance_ahead;
+    vector<double> clearance_behind;
+
+    int chosen_lane = current_lane;
+
+    for (int j=0; j<lane_positions.size(); j++)
+    {
+        safe[j] = true;
+        traffic_speed[j] = 100;
+        clearance_ahead[j] = 1000;
+        clearance_behind[j] = 1000;
+        for(int i=0; i<sensor_fusion.size(); i++)
+            {
+                //determine if car is directly ahead
+                double sensor_d = sensor_fusion[i][6];
+                if (abs(sensor_d - lane_positions[j]) < 2.7)
+                {
+                    double vx = sensor_fusion[i][3];
+                    double vy = sensor_fusion[i][4];
+                    double check_speed = sqrt(vx*vx + vy*vy);
+                    double check_car_s = sensor_fusion[i][5];
+
+                    check_car_s += (double)prev_points*.02*check_speed;
+
+                    double check_distance = check_car_s-car_s;
+
+                    //adjust check_distance when wrapping around max_s to zero
+                    if (check_distance > (max_s/2.0))
+                        check_distance -= max_s;
+                    if (check_distance < (-1.0*max_s/2.0))
+                        check_distance += max_s;
+
+                    if (check_distance > 0 && check_speed < traffic_speed[j])
+                        traffic_speed[j] = check_speed;
+
+                    if( check_distance > 0 && abs(check_distance) < clearance_ahead[j])
+                        clearance_ahead[j] = check_distance;
+
+                    if( check_distance < 0 && abs(check_distance) < clearance_behind[j])
+                        clearance_behind[j] = check_distance;
+
+                    if( abs(check_distance) < 20)
+                        safe[j] = false;
+                }
+            }
+
+    }
+
+
+    //look at lane to the left unless car is in leftmost lane
+    if (current_lane > 0)
+    {
+        if (safe[current_lane-1] && (traffic_speed[current_lane-1] > max_speed))
+        {
+            chosen_lane = current_lane-1;
+            max_speed = traffic_speed[current_lane-1];
+        }
+    }
+
+    //look at lane to the right unless car is in rightmost lane
+    if (current_lane < lane_positions.size())
+    {
+        if (safe[current_lane+1] && (traffic_speed[current_lane+1] > max_speed))
+        {
+            chosen_lane = current_lane+1;
+            max_speed = traffic_speed[current_lane-1];
+        }
+    }
+
+    return chosen_lane;
+
+
+}
+
+
 int main() {
 
   uWS::Hub h;
@@ -220,6 +301,7 @@ int main() {
 
   //desired lane
   int target_lane = 1;
+  int prev_target_lane = 1;
 
   //vector defining Frenet d coordinate for center of each lane
   vector<double> lane_positions;
@@ -264,7 +346,7 @@ int main() {
   	map_waypoints_dy.push_back(d_y);
   }
 
-  h.onMessage([&map_waypoints_x,&map_waypoints_y,&map_waypoints_s,&map_waypoints_dx,&map_waypoints_dy, &speed_limit, &a_max, &j_max, &car_a, &set_speed, &lane_positions, &target_lane, &max_s](uWS::WebSocket<uWS::SERVER> ws, char *data, size_t length,
+  h.onMessage([&map_waypoints_x,&map_waypoints_y,&map_waypoints_s,&map_waypoints_dx,&map_waypoints_dy, &speed_limit, &a_max, &j_max, &car_a, &set_speed, &lane_positions, &target_lane, &prev_target_lane, &max_s](uWS::WebSocket<uWS::SERVER> ws, char *data, size_t length,
                      uWS::OpCode opCode) {
     // "42" at the start of the message means there's a websocket message event.
     // The 4 signifies a websocket message
@@ -314,10 +396,14 @@ int main() {
 
 
           	bool too_close = false;
+
           	int prev_points = previous_path_x.size();
 
 
+
             //iterate through detected vehicles, determine if there is a car ahead going below speed limit
+            double check_distance = 1000;
+            double check_speed = 1000;
 
             for(int i=0; i<sensor_fusion.size(); i++)
             {
@@ -327,13 +413,20 @@ int main() {
                 {
                     double vx = sensor_fusion[i][3];
                     double vy = sensor_fusion[i][4];
-                    double check_speed = sqrt(vx*vx + vy*vy);
+                    check_speed = sqrt(vx*vx + vy*vy);
                     double check_car_s = sensor_fusion[i][5];
 
                     check_car_s += (double)prev_points*.02*check_speed;
-                    std::cout << check_car_s-car_s << "\n";
 
-                    if( (check_car_s > car_s) && ((check_car_s-car_s)<30) )
+                    check_distance = check_car_s-car_s;
+
+                    //adjust check_distance when wrapping around max_s to zero
+                    if (check_distance > (max_s/2.0))
+                        check_distance -= max_s;
+                    if (check_distance < (-1.0*max_s/2.0))
+                        check_distance += max_s;
+
+                    if( (check_distance > 0) && (check_distance<35) )
                         too_close = true;
                 }
             }
@@ -344,11 +437,17 @@ int main() {
             {
                 set_speed -= 0.223;
             }
-            else if (set_speed < speed_limit)
+            else if (set_speed < check_speed*0.98 && check_distance>40)
+            {
+                set_speed += 0.223;
+            }
+            else if (set_speed < speed_limit*0.98 && check_distance>100)
             {
                 set_speed += 0.223;
             }
 
+            if (check_speed < speed_limit*0.9)
+                target_lane = choose_lane(car_s, car_d, set_speed, sensor_fusion, lane_positions, target_lane, prev_points, max_s);
 
 
 
@@ -358,6 +457,12 @@ int main() {
 
 
 
+
+            //if target speed or lane has changed, ignore previous path and recalculate from scratch
+
+
+            //if(prev_target_lane != target_lane || abs(car_speed - set_speed) > 0.2)
+            //    prev_points = 0;
 
 
           	vector<double> ptsx;
@@ -427,6 +532,9 @@ int main() {
             //create spline for smooth path
             tk::spline sp;
 
+            cout << ptsx[0] << ", " << ptsx[1] << ", " << ptsx[2] << ", " << ptsx[3] << ", " << ptsx[4] << ", " << car_yaw << "\n";
+            cout << set_speed << "\n";
+
             sp.set_points(ptsx,ptsy);
 
 
@@ -483,7 +591,7 @@ int main() {
 
             //double radius = curve_radius(car_x, car_y, map_waypoints_x, map_waypoints_y);
 
-            //std::cout << radius << "\n";
+
 
 
           	//*********************************************************************************
