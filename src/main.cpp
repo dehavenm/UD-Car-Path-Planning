@@ -338,18 +338,19 @@ int main() {
 
 
 
-          	int prev_points = previous_path_x.size();
+            int prev_points = previous_path_x.size();
 
 
 
-          	vector<double> ptsx;
-          	vector<double> ptsy;
+            vector<double> ptsx;
+            vector<double> ptsy;
 
-          	double ref_x = car_x;
-          	double ref_y = car_y;
-          	double ref_yaw = deg2rad(car_yaw);
+            double ref_x = car_x;
+            double ref_y = car_y;
+          	
+	    double ref_yaw = deg2rad(car_yaw);
 
-          	if(prev_points < 2)
+            if(prev_points < 2)
             {
                 //create two points defining a path tangent to the car
                 double prev_car_x = car_x - cos(car_yaw);
