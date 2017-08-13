@@ -9,6 +9,7 @@
 #include "Eigen-3.3/Eigen/QR"
 #include "json.hpp"
 #include "spline.h"
+#include <stdlib.h>
 
 using namespace std;
 
@@ -216,9 +217,9 @@ int choose_lane(double car_s, double car_d, double max_speed, vector<vector<doub
     for (int j=0; j<lane_positions.size(); j++)
     {
         safe[j] = true;
-        traffic_speed[j] = 100;
-        clearance_ahead[j] = 1000;
-        clearance_behind[j] = 1000;
+        traffic_speed.push_back(100.0);
+        clearance_ahead.push_back(1000.0);
+        clearance_behind.push_back(1000.0);
         for(int i=0; i<sensor_fusion.size(); i++)
             {
                 //determine if car is directly ahead
@@ -446,14 +447,8 @@ int main() {
                 set_speed += 0.223;
             }
 
-            if (check_speed < speed_limit*0.9)
-                target_lane = choose_lane(car_s, car_d, set_speed, sensor_fusion, lane_positions, target_lane, prev_points, max_s);
-
-
-
-
-
-
+            //if (check_speed < speed_limit*0.9)
+                //target_lane = choose_lane(car_s, car_d, set_speed, sensor_fusion, lane_positions, target_lane, prev_points, max_s);
 
 
 
@@ -502,11 +497,18 @@ int main() {
                 ptsy.push_back(ref_y);
             }
 
+
+
+            cout << ptsx[0] << ", " << ptsy[0] << ", " << ptsx[1] << ", " << ptsy[1] << ", " << car_yaw << "\n";
+            cout << check_distance << "\n";
+
             //define rough path in Frenet coordinates, convert to XY
 
             vector<double> next_wp0 = getXY(car_s+30, lane_positions[target_lane], map_waypoints_s, map_waypoints_x, map_waypoints_y);
             vector<double> next_wp1 = getXY(car_s+60, lane_positions[target_lane], map_waypoints_s, map_waypoints_x, map_waypoints_y);
             vector<double> next_wp2 = getXY(car_s+90, lane_positions[target_lane], map_waypoints_s, map_waypoints_x, map_waypoints_y);
+
+
 
 
 
@@ -529,11 +531,12 @@ int main() {
                 ptsy[i] = (shift_x*sin(0-ref_yaw)+shift_y*cos(0-ref_yaw));
             }
 
+
+
             //create spline for smooth path
             tk::spline sp;
 
-            cout << ptsx[0] << ", " << ptsx[1] << ", " << ptsx[2] << ", " << ptsx[3] << ", " << ptsx[4] << ", " << car_yaw << "\n";
-            cout << set_speed << "\n";
+
 
             sp.set_points(ptsx,ptsy);
 
@@ -590,6 +593,8 @@ int main() {
 
 
             //double radius = curve_radius(car_x, car_y, map_waypoints_x, map_waypoints_y);
+
+            prev_target_lane = target_lane;
 
 
 
