@@ -165,58 +165,26 @@ vector<double> getXY(double s, double d, vector<double> maps_s, vector<double> m
 }
 
 
-//function to take car's location and calculate bend radius of road ahead
-double curve_radius(double car_x, double car_y, vector<double> maps_x, vector<double> maps_y) {
 
-    //find closest waypoint, use that plus the nest two points in calculating radius
-    int p_1 = ClosestWaypoint(car_x,car_y,maps_x,maps_y);
-
-    int num_waypoints = maps_x.size();
-
-    int p_2 = p_1 + 1;
-
-    if (p_2 >= num_waypoints)
-        p_2 = p_2 - num_waypoints;
-
-    int p_3 = p_1 + 2;
-
-    if (p_3 >= num_waypoints)
-        p_3 = p_3 - num_waypoints;
-
-    //calculate road radius using formula for radius of circumscribing circle of a triangle
-    double a = distance(maps_x[p_1], maps_y[p_1], maps_x[p_2], maps_y[p_2]);
-    double b = distance(maps_x[p_2], maps_y[p_2], maps_x[p_3], maps_y[p_3]);
-    double c = distance(maps_x[p_3], maps_y[p_3], maps_x[p_1], maps_y[p_1]);
-
-    double s = (a+b+c)/2;
-
-    double area = sqrt(s*(s-a)*(s-b)*(s-c));
-    //return value of infinity for effectively straight road
-    double radius;
-    if (area < 0.001)
-        radius = std::numeric_limits<double>::infinity();
-    else
-        radius = (a*b*c)/(4*a);
-
-    return radius;
-
-}
 
 
 //function to determine best lane to be in
 int choose_lane(double car_s, double car_d, double max_speed, vector<vector<double>> sensor_fusion, vector<double> lane_positions, int current_lane, int prev_points, double max_s)
 {
     //
-    vector<bool> safe;
+
     vector<double> traffic_speed;
     vector<double> clearance_ahead;
     vector<double> clearance_behind;
+
+    double min_clearance_ahead = 18;
+    double min_clearance_behind = 12;
 
     int chosen_lane = current_lane;
 
     for (int j=0; j<lane_positions.size(); j++)
     {
-        safe[j] = true;
+
         traffic_speed.push_back(100.0);
         clearance_ahead.push_back(1000.0);
         clearance_behind.push_back(1000.0);
@@ -233,7 +201,7 @@ int choose_lane(double car_s, double car_d, double max_speed, vector<vector<doub
 
                     check_car_s += (double)prev_points*.02*check_speed;
 
-                    double check_distance = check_car_s-car_s;
+                    double check_distance = check_car_s-(car_s+prev_points*.02*max_speed);
 
                     //adjust check_distance when wrapping around max_s to zero
                     if (check_distance > (max_s/2.0))
@@ -248,10 +216,9 @@ int choose_lane(double car_s, double car_d, double max_speed, vector<vector<doub
                         clearance_ahead[j] = check_distance;
 
                     if( check_distance < 0 && abs(check_distance) < clearance_behind[j])
-                        clearance_behind[j] = check_distance;
+                        clearance_behind[j] = check_distance*-1.0;
 
-                    if( abs(check_distance) < 20)
-                        safe[j] = false;
+
                 }
             }
 
@@ -261,7 +228,7 @@ int choose_lane(double car_s, double car_d, double max_speed, vector<vector<doub
     //look at lane to the left unless car is in leftmost lane
     if (current_lane > 0)
     {
-        if (safe[current_lane-1] && (traffic_speed[current_lane-1] > max_speed))
+        if ((clearance_ahead[current_lane-1] > min_clearance_ahead && clearance_behind[current_lane-1] > min_clearance_behind) && (traffic_speed[current_lane-1] > max_speed))
         {
             chosen_lane = current_lane-1;
             max_speed = traffic_speed[current_lane-1];
@@ -271,10 +238,10 @@ int choose_lane(double car_s, double car_d, double max_speed, vector<vector<doub
     //look at lane to the right unless car is in rightmost lane
     if (current_lane < lane_positions.size())
     {
-        if (safe[current_lane+1] && (traffic_speed[current_lane+1] > max_speed))
+        if ((clearance_ahead[current_lane+1] > min_clearance_ahead && clearance_behind[current_lane+1] > min_clearance_behind) && (traffic_speed[current_lane+1] > max_speed))
         {
             chosen_lane = current_lane+1;
-            max_speed = traffic_speed[current_lane-1];
+
         }
     }
 
@@ -314,14 +281,10 @@ int main() {
 
   const double speed_limit = 22.2;
 
-  const double a_max = 9.5;
-
-  const double j_max = 45.0;
-
-  //keep track of car's acceleration
-  double car_a = 0.0;
-
   double set_speed = 0.0;
+
+  //measure time elapsed since last lane change, avoid excessively frequent lane changes
+  double countdown = 2.0;
 
   //double set_a = 0.0;
 
@@ -347,7 +310,7 @@ int main() {
   	map_waypoints_dy.push_back(d_y);
   }
 
-  h.onMessage([&map_waypoints_x,&map_waypoints_y,&map_waypoints_s,&map_waypoints_dx,&map_waypoints_dy, &speed_limit, &a_max, &j_max, &car_a, &set_speed, &lane_positions, &target_lane, &prev_target_lane, &max_s](uWS::WebSocket<uWS::SERVER> ws, char *data, size_t length,
+  h.onMessage([&map_waypoints_x,&map_waypoints_y,&map_waypoints_s,&map_waypoints_dx,&map_waypoints_dy, &speed_limit, &set_speed, &lane_positions, &target_lane, &prev_target_lane, &max_s, &countdown](uWS::WebSocket<uWS::SERVER> ws, char *data, size_t length,
                      uWS::OpCode opCode) {
     // "42" at the start of the message means there's a websocket message event.
     // The 4 signifies a websocket message
@@ -419,7 +382,7 @@ int main() {
 
                     check_car_s += (double)prev_points*.02*check_speed;
 
-                    check_distance = check_car_s-car_s;
+                    check_distance = check_car_s-(car_s+prev_points*.02*set_speed);
 
                     //adjust check_distance when wrapping around max_s to zero
                     if (check_distance > (max_s/2.0))
@@ -427,10 +390,12 @@ int main() {
                     if (check_distance < (-1.0*max_s/2.0))
                         check_distance += max_s;
 
-                    if( (check_distance > 0) && (check_distance<35) )
+                    if( (check_distance > 0) && (check_distance<25) )
                         too_close = true;
                 }
             }
+
+            cout << check_distance << "\n";
 
 
 
@@ -438,26 +403,26 @@ int main() {
             {
                 set_speed -= 0.223;
             }
-            else if (set_speed < check_speed*0.98 && check_distance>40)
+            else if (set_speed < check_speed*0.98 && check_distance>30)
             {
-                set_speed += 0.223;
+                set_speed = min(set_speed += 0.223, speed_limit);
             }
-            else if (set_speed < speed_limit*0.98 && check_distance>100)
+            else if (set_speed < speed_limit*0.98 && (check_distance>50 || check_distance < 0))
             {
-                set_speed += 0.223;
+                set_speed = min(set_speed += 0.223, speed_limit);
             }
 
-            //if (check_speed < speed_limit*0.9)
-                //target_lane = choose_lane(car_s, car_d, set_speed, sensor_fusion, lane_positions, target_lane, prev_points, max_s);
+            if (check_speed < speed_limit && countdown <= 0.0)
+            {
+                target_lane = choose_lane(car_s, car_d, set_speed, sensor_fusion, lane_positions, target_lane, prev_points, max_s);
+                countdown = 2.0;
+            }
+            else if (countdown > 0)
+                countdown -= 0.02;
 
 
 
 
-            //if target speed or lane has changed, ignore previous path and recalculate from scratch
-
-
-            //if(prev_target_lane != target_lane || abs(car_speed - set_speed) > 0.2)
-            //    prev_points = 0;
 
 
           	vector<double> ptsx;
@@ -499,12 +464,14 @@ int main() {
 
 
 
-            cout << ptsx[0] << ", " << ptsy[0] << ", " << ptsx[1] << ", " << ptsy[1] << ", " << car_yaw << "\n";
-            cout << check_distance << "\n";
+
+
 
             //define rough path in Frenet coordinates, convert to XY
 
-            vector<double> next_wp0 = getXY(car_s+30, lane_positions[target_lane], map_waypoints_s, map_waypoints_x, map_waypoints_y);
+
+
+            vector<double> next_wp0 = getXY(car_s+55, lane_positions[target_lane], map_waypoints_s, map_waypoints_x, map_waypoints_y);
             vector<double> next_wp1 = getXY(car_s+60, lane_positions[target_lane], map_waypoints_s, map_waypoints_x, map_waypoints_y);
             vector<double> next_wp2 = getXY(car_s+90, lane_positions[target_lane], map_waypoints_s, map_waypoints_x, map_waypoints_y);
 
@@ -589,10 +556,6 @@ int main() {
             }
 
 
-
-
-
-            //double radius = curve_radius(car_x, car_y, map_waypoints_x, map_waypoints_y);
 
             prev_target_lane = target_lane;
 
